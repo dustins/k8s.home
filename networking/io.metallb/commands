@@ -1,0 +1,2 @@
+# install commands (might need to be run 2x if CRDs aren't created before manifests are applied)
+kubectl kustomize --enable-helm | kubectl apply -f -
