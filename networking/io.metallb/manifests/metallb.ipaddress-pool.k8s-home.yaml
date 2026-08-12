@@ -14,5 +14,6 @@ spec:
   # will all share the same settings. Each range can be either a
   # CIDR prefix, or an explicit start-end range of IPs.
   addresses:
-  - 10.1.41.2-10.1.41.127
+  - 10.1.41.2-10.1.41.31
+  - 10.1.41.127-10.1.41.250
   # - 2600:4040:203c:5900::2-2600:4040:203c:5900::7d1
