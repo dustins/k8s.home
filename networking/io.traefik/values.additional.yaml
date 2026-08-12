@@ -1,0 +1,33 @@
+gateway:
+  listeners:
+    websecure:
+      # -- Port is the network port. Multiple listeners may use the same port, subject to the Listener compatibility rules.
+      # The port must match a port declared in ports section.
+      port: 443
+
+ingressRoute:
+  dashboard:
+    # -- Create an IngressRoute for the dashboard
+    enabled: true
+    # -- The router match rule used for the dashboard ingressRoute
+    matchRule: Host(`traefik.k8s.home`)
+    # -- Specify the allowed entrypoints to use for the dashboard ingress route, (e.g. traefik, web, websecure).
+    # By default, it's using traefik entrypoint, which is not exposed.
+    # /!\ Do not expose your dashboard without any protection over the internet /!\
+    entryPoints: [ "traefik", "web", "websecure" ]
+
+  healthcheck:
+    # -- Create an IngressRoute for the healthcheck probe
+    enabled: false
+    matchRule: Host(`traefik.k8s.home`) && PathPrefix(`/ping`)
+    entryPoints: [ "traefik", "web", "websecure" ]
+
+providers:
+  kubernetesCRD:
+    # -- Allows IngressRoute to reference resources in namespace other than theirs
+    allowCrossNamespace: true
+
+service:
+  # -- Additional annotations applied to both TCP and UDP services (e.g. for cloud provider specific config)
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: 10.1.41.2
