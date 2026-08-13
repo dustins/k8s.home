@@ -27,6 +27,18 @@ providers:
     # -- Allows IngressRoute to reference resources in namespace other than theirs
     allowCrossNamespace: true
 
+certificatesResolvers:
+  swigg-ca:
+    acme:
+      email: dustin@swigg.net
+      storage: acme.json
+      # httpChallenge:
+      #   entryPoint: web
+      dnsChallenge:
+        provider: technitium
+        resolvers: "10.1.2.32:53"
+      caserver: "https://ca.core.infra.home/acme/system-acme/directory"
+
 service:
   # -- Additional annotations applied to both TCP and UDP services (e.g. for cloud provider specific config)
   annotations:
