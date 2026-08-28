@@ -1,0 +1,33 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "timezone": "America/New_York",
+  "dependencyDashboard": false,
+  "osvVulnerabilityAlerts": true,
+  "kustomize": {
+    "fileMatch": ["(^|/)kustomization\\.ya?ml$"]
+  },
+  "helmv3": {
+    "fileMatch": ["(^|/)Chart\\.ya?ml$"]
+  },
+  "argocd": {
+    "fileMatch": ["\\.ya?ml$"]
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["argocd"],
+      "groupName": "ArgoCD Application targetRevision bumps",
+      "commitMessageTopic": "{{depName}} Application source"
+    },
+    {
+      "matchManagers": ["helmv3", "kustomize"],
+      "groupName": "Helm chart versions"
+    },
+    {
+      "matchDatasources": ["docker"],
+      "groupName": "container image tags"
+    }
+  ]
+}
