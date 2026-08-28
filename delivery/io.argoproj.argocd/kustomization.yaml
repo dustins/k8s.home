@@ -4,12 +4,11 @@ kind: Kustomization
 
 helmCharts:
 - name: argo-cd
-  namespace: argo-cd
+  namespace: argocd
   includeCRDs: true
   releaseName: argocd
   version: 10.3.2
   repo: https://argoproj.github.io/argo-helm
-  valuesFile: values.yaml
 
 patches:
 - target:

@@ -1,2 +1,6 @@
 # install commands
-kubectl kustomize --enable-helm | kubectl apply -f -
+#kubectl kustomize --enable-helm | kubectl apply -f -
+kubectl kustomize --enable-helm | kubectl apply --server-side --force-conflicts -f -
+
+# get admin password
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
