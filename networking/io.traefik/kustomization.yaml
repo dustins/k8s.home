@@ -11,14 +11,14 @@ helmCharts:
   additionalValuesFiles:
   - values.additional.yaml
 
-patches:
-- target:
-    Kind: Deployment
-    name: traefik
-  patch: |-
-    - op: add
-      path: /spec/template/spec/containers/0/args/-1
-      value: "--serverstransport.insecureskipverify=true"
+#patches:
+#- target:
+#    Kind: Deployment
+#    name: traefik
+#  patch: |-
+#    - op: add
+#      path: /spec/template/spec/containers/0/args/-1
+#      value: "--serverstransport.insecureskipverify=true"
 
 resources:
 - manifests/traefik.namespace.yaml

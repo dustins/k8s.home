@@ -27,17 +27,50 @@ providers:
     # -- Allows IngressRoute to reference resources in namespace other than theirs
     allowCrossNamespace: true
 
+deployment:
+  additionalVolumes:
+  - name: technitium-token
+    hostPath:
+      path: /run/secrets/services/traefik/technitiumApiToken
+      type: File
+  - name: ca-certs
+    hostPath:
+      path: /etc/ssl/certs/ca-bundle.crt
+      type: File
+
+additionalArguments:
+- "--serverstransport.insecureskipverify=true"
+- "--entrypoints.websecure.http.tls.certResolver=swigg-ca"
+- "--entrypoints.websecure.http.tls.domains[0].main=k8s.home"
+- "--entrypoints.websecure.http.tls.domains[0].sans=*.k8s.home"
+
+additionalVolumeMounts:
+- name: technitium-token
+  mountPath: /run/secrets/services/traefik/technitiumApiToken
+  readOnly: true
+- name: ca-certs
+  mountPath: /tmp/ca-bundle.crt
+  readOnly: true
+
 certificatesResolvers:
   swigg-ca:
     acme:
       email: dustin@swigg.net
-      storage: acme.json
-      # httpChallenge:
-      #   entryPoint: web
+      storage: /tmp/acme.json
       dnsChallenge:
         provider: technitium
         resolvers: "10.1.2.32:53"
       caserver: "https://ca.core.infra.home/acme/system-acme/directory"
+
+env:
+- name: TECHNITIUM_API_TOKEN_FILE
+  value: /run/secrets/services/traefik/technitiumApiToken
+- name: TECHNITIUM_SERVER_BASE_URL
+  value: "https://dns.core.infra.home"
+- name: LEGO_CA_CERTIFICATES
+  value: /tmp/ca-bundle.crt
+- name: SSL_CERT_FILE
+  value: /tmp/ca-bundle.crt
 
 service:
   # -- Additional annotations applied to both TCP and UDP services (e.g. for cloud provider specific config)
