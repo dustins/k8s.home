@@ -9,7 +9,6 @@ helmCharts:
   releaseName: metallb
   version: 0.16.1
   repo: https://metallb.github.io/metallb
-  valuesFile: values.yaml
   additionalValuesFiles:
   - values.additional.yaml
 
