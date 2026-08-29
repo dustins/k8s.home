@@ -9,7 +9,7 @@ jobs:
   renovate:
     runs-on: docker
     container:
-      image: renovate/renovate:41
+      image: renovate/renovate:44
       volumes:
       - /etc/ssl/certs/swigg-ca-bundle.pem:/etc/ssl/certs/swigg-ca-bundle.pem:ro
 
