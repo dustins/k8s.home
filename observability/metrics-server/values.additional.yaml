@@ -1,5 +1,2 @@
 metrics:
   enabled: true
-
-args:
-  - --kubelet-preferred-address-types=Hostname,InternalDNS,InternalIP
