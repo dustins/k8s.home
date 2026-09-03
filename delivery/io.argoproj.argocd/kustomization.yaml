@@ -7,7 +7,7 @@ helmCharts:
   namespace: argocd
   includeCRDs: true
   releaseName: argocd
-  version: 10.4.2
+  version: 10.7.0
   repo: https://argoproj.github.io/argo-helm
   additionalValuesFiles:                                                                                           
   - values.additional.yaml
