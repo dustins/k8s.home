@@ -1,0 +1,23 @@
+engines:
+  local:
+    lvm:
+      # -- Enable/Disable LocalPV LVM Storage Engine
+      enabled: false
+    zfs:
+      # -- Enable/Disable LocalPV ZFS Storage Engine
+      enabled: true
+    rawfile:
+      # Disabled by default since rawfile is not marked as stable yet.
+      # -- Enable/Disable LocalPV Rawfile Storage Engine
+      enabled: false
+    hostpath:
+      # -- Enable/Disable Dynamic LocalPV Provisioner
+      enabled: false
+  replicated:
+    mayastor:
+      # -- Enable/Disable Replicated PV Mayastor Storage Engine
+      enabled: false
+
+loki:
+  # -- Enable/Disable loki.
+  enabled: false
