@@ -1,3 +1,6 @@
 providerIpPrefixes:
 - 10.1.40.32/28
 
+dnsConfig:
+ searches:
+ - k8s.home
