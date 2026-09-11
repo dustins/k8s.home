@@ -6,7 +6,7 @@ helmCharts:
   namespace: openebs
   includeCRDs: true
   releaseName: openebs
-  version: 4.6.0
+  version: 4.6.1
   repo: https://openebs.github.io/openebs
   additionalValuesFiles:
   - values.additional.yaml
