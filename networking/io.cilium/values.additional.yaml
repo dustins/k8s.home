@@ -19,3 +19,5 @@ encryption:
   enabled: false
   type: wireguard
 MTU: 8950
+bpf:
+  masquerade: true
