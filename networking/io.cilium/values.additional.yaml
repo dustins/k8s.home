@@ -3,7 +3,7 @@ k8sServiceHost: 10.1.40.32
 k8sServicePort: 6443
 routingMode: "native"
 ipv4NativeRoutingCIDR: "10.42.0.0/16"
-autoDirectNodeRoutes: true 
+autoDirectNodeRoutes: true
 tunnelProtocol: ""
 enableIPv4Masquerade: true
 ipam:
@@ -18,3 +18,4 @@ hubble:
 encryption:
   enabled: false
   type: wireguard
+MTU: 8950
