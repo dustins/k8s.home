@@ -10,6 +10,8 @@ ipam:
   mode: cluster-pool
   operator:
     clusterPoolIPv4MaskSize: 24
+    clusterPoolIPv4PodCIDRList:
+      - "10.42.0.0/16"
 hubble:
   relay:
     enabled: true
