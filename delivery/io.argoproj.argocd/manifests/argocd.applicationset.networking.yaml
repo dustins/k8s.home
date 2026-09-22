@@ -2,9 +2,10 @@
 # Tier: networking — Cluster networking: CNI (cilium), LoadBalancer (metallb), ingress (traefik)
 #
 # One Argo CD Application per networking/<app>/kustomization.yaml in this repo.
-# The Application name is the Helm release name and the destination namespace
-# is the Helm release namespace, both read from the kustomization's helmCharts
-# entry, so adding or removing an app is just adding or removing a directory.
+# The Application name is the app directory name (e.g. io.cilium) and the
+# destination namespace is the Helm release namespace read from the
+# kustomization's helmCharts entry, so adding or removing an app is just
+# adding or removing a directory.
 # Convention: every app directory is a kustomization with exactly one
 # helmCharts entry (that is what every directory here does today).
 apiVersion: argoproj.io/v1alpha1
@@ -42,7 +43,7 @@ spec:
       - path: networking/*/kustomization.yaml
   template:
     metadata:
-      name: '{{ (index .helmCharts 0).releaseName }}'
+      name: '{{ .path.basename }}'
       labels:
         k8s.home/tier: networking
     spec:
