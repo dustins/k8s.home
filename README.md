@@ -13,15 +13,15 @@ single Helm chart:
 
 | Tier            | App directory                  | Chart                | Namespace        |
 | --------------- | ------------------------------ | -------------------- | ---------------- |
-| `networking`    | `io.cilium`                    | cilium               | `kube-system`    |
-| `networking`    | `io.metallb`                   | metallb              | `metallb-system` |
-| `networking`    | `io.traefik`                   | traefik              | `traefik`        |
-| `security`      | `io.cert-manager`              | cert-manager         | `cert-manager`   |
+| `networking`    | `cilium`                       | cilium               | `kube-system`    |
+| `networking`    | `metallb`                      | metallb              | `metallb-system` |
+| `networking`    | `traefik`                      | traefik              | `traefik`        |
+| `security`      | `cert-manager`                 | cert-manager         | `cert-manager`   |
 | `security`      | `kubelet-csr-approver`         | kubelet-csr-approver | `kube-system`    |
-| `storage`       | `io.openebs`                   | openebs (ZFS LocalPV) | `openebs`        |
-| `observability` | `io.k8s.sigs.metrics-server`   | metrics-server       | `kube-system`    |
-| `observability` | `io.k8s.sigs.headlamp`         | headlamp             | `kube-system`    |
-| `delivery`      | `io.argoproj.argocd`           | argo-cd              | `argocd`         |
+| `storage`       | `openebs`                      | openebs (ZFS LocalPV) | `openebs`        |
+| `observability` | `metrics-server`               | metrics-server       | `kube-system`    |
+| `observability` | `headlamp`                     | headlamp             | `kube-system`    |
+| `delivery`      | `argocd`                       | argo-cd              | `argocd`         |
 
 Every app directory has the same shape:
 
@@ -34,20 +34,21 @@ Every app directory has the same shape:
 └── charts/                 # gitignored; populated by `kustomize --enable-helm` when rendering locally
 ```
 
-The kustomization is the contract. Argo CD reads the `helmCharts[0]` entry to
-name the Application (`releaseName`) and pick its destination
+The kustomization is the contract. The directory name becomes the Application
+name, and Argo CD reads the `helmCharts[0]` entry to pick the destination
 (`namespace`), so **adding an app is adding a directory and removing an app is
-deleting one**. Directory names follow the project's reverse-DNS domain
-(`io.cilium`, `io.k8s.sigs.headlamp`) where it has one.
+deleting one**. Directory names match the Helm release name (`cilium`,
+`metrics-server`).
 
 ## How Argo CD consumes this repo
 
-Argo CD's own directory, `delivery/io.argoproj.argocd`, carries five
+Argo CD's own directory, `delivery/argocd`, carries five
 `AppProject` + `ApplicationSet` pairs, one per tier, in `manifests/`. Each
 ApplicationSet uses a git *files* generator over
 `<tier>/*/kustomization.yaml` and templates an Application per match:
 
-- **Name and namespace** come from the kustomization's `helmCharts[0]`.
+- **Name** is the app directory name; **namespace** comes from the
+  kustomization's `helmCharts[0]`.
 - **Sync policy** is `automated` with `prune` and `selfHeal`, so the cluster
   always converges on `main` and hand edits in the cluster are reverted.
 - **Server-side apply** is on for every app. The cilium and cert-manager CRDs
@@ -105,7 +106,7 @@ Nothing schedules without a CNI, so this is the one component that must be
 installed before Argo CD can exist:
 
 ```sh
-cd networking/io.cilium
+cd networking/cilium
 kubectl kustomize --enable-helm | kubectl apply -f -
 ```
 
@@ -114,7 +115,7 @@ Wait for the nodes to go `Ready`.
 ### 2. Argo CD (by hand, run twice)
 
 ```sh
-cd delivery/io.argoproj.argocd
+cd delivery/argocd
 kubectl kustomize --enable-helm | kubectl apply --server-side --force-conflicts -f -
 # wait a few seconds for the CRDs to be established, then run it again
 kubectl kustomize --enable-helm | kubectl apply --server-side --force-conflicts -f -

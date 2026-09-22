@@ -1,8 +1,8 @@
 ---
-# Tier: networking — Cluster networking: CNI (cilium), LoadBalancer (metallb), ingress (traefik)
+# Tier: delivery — GitOps delivery: Argo CD manages itself, including these AppProjects and ApplicationSets
 #
-# One Argo CD Application per networking/<app>/kustomization.yaml in this repo.
-# The Application name is the app directory name (e.g. io.cilium) and the
+# One Argo CD Application per delivery/<app>/kustomization.yaml in this repo.
+# The Application name is the app directory name (e.g. cilium) and the
 # destination namespace is the Helm release namespace read from the
 # kustomization's helmCharts entry, so adding or removing an app is just
 # adding or removing a directory.
@@ -11,10 +11,10 @@
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
-  name: networking
+  name: delivery
   namespace: argocd
 spec:
-  description: "Cluster networking: CNI (cilium), LoadBalancer (metallb), ingress (traefik)"
+  description: "GitOps delivery: Argo CD manages itself, including these AppProjects and ApplicationSets"
   sourceRepos:
   - ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
   destinations:
@@ -27,27 +27,27 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: networking
+  name: delivery
   namespace: argocd
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
   syncPolicy:
-    # Deleting an app directory removes the Application but leaves the workload running. Never auto-tear-down networking.
+    # Argo CD manages itself. If the argocd Application is ever removed, keep Argo CD running rather than deleting it out from under its own controller.
     preserveResourcesOnDeletion: true
   generators:
   - git:
       repoURL: ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
       revision: main
       files:
-      - path: networking/*/kustomization.yaml
+      - path: delivery/*/kustomization.yaml
   template:
     metadata:
       name: '{{ .path.basename }}'
       labels:
-        k8s.home/tier: networking
+        k8s.home/tier: delivery
     spec:
-      project: networking
+      project: delivery
       source:
         repoURL: ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
         targetRevision: main

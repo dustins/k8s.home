@@ -1,8 +1,8 @@
 ---
-# Tier: storage — Cluster storage: openebs (LocalPV ZFS)
+# Tier: networking — Cluster networking: CNI (cilium), LoadBalancer (metallb), ingress (traefik)
 #
-# One Argo CD Application per storage/<app>/kustomization.yaml in this repo.
-# The Application name is the app directory name (e.g. io.cilium) and the
+# One Argo CD Application per networking/<app>/kustomization.yaml in this repo.
+# The Application name is the app directory name (e.g. cilium) and the
 # destination namespace is the Helm release namespace read from the
 # kustomization's helmCharts entry, so adding or removing an app is just
 # adding or removing a directory.
@@ -11,10 +11,10 @@
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
-  name: storage
+  name: networking
   namespace: argocd
 spec:
-  description: "Cluster storage: openebs (LocalPV ZFS)"
+  description: "Cluster networking: CNI (cilium), LoadBalancer (metallb), ingress (traefik)"
   sourceRepos:
   - ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
   destinations:
@@ -27,27 +27,27 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: storage
+  name: networking
   namespace: argocd
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
   syncPolicy:
-    # Deleting an app directory removes the Application but leaves the workload (and its PVs) running.
+    # Deleting an app directory removes the Application but leaves the workload running. Never auto-tear-down networking.
     preserveResourcesOnDeletion: true
   generators:
   - git:
       repoURL: ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
       revision: main
       files:
-      - path: storage/*/kustomization.yaml
+      - path: networking/*/kustomization.yaml
   template:
     metadata:
       name: '{{ .path.basename }}'
       labels:
-        k8s.home/tier: storage
+        k8s.home/tier: networking
     spec:
-      project: storage
+      project: networking
       source:
         repoURL: ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
         targetRevision: main

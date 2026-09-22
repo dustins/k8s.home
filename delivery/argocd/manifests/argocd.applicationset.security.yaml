@@ -2,7 +2,7 @@
 # Tier: security — Cluster security: cert-manager, kubelet CSR approval
 #
 # One Argo CD Application per security/<app>/kustomization.yaml in this repo.
-# The Application name is the app directory name (e.g. io.cilium) and the
+# The Application name is the app directory name (e.g. cilium) and the
 # destination namespace is the Helm release namespace read from the
 # kustomization's helmCharts entry, so adding or removing an app is just
 # adding or removing a directory.

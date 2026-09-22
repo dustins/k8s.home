@@ -1,8 +1,8 @@
 ---
-# Tier: observability — Cluster observability and dashboards: metrics-server, headlamp
+# Tier: storage — Cluster storage: openebs (LocalPV ZFS)
 #
-# One Argo CD Application per observability/<app>/kustomization.yaml in this repo.
-# The Application name is the app directory name (e.g. io.cilium) and the
+# One Argo CD Application per storage/<app>/kustomization.yaml in this repo.
+# The Application name is the app directory name (e.g. cilium) and the
 # destination namespace is the Helm release namespace read from the
 # kustomization's helmCharts entry, so adding or removing an app is just
 # adding or removing a directory.
@@ -11,10 +11,10 @@
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
-  name: observability
+  name: storage
   namespace: argocd
 spec:
-  description: "Cluster observability and dashboards: metrics-server, headlamp"
+  description: "Cluster storage: openebs (LocalPV ZFS)"
   sourceRepos:
   - ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
   destinations:
@@ -27,27 +27,27 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: observability
+  name: storage
   namespace: argocd
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
   syncPolicy:
-    # Observability apps are safe to remove fully when their directory goes away.
-    preserveResourcesOnDeletion: false
+    # Deleting an app directory removes the Application but leaves the workload (and its PVs) running.
+    preserveResourcesOnDeletion: true
   generators:
   - git:
       repoURL: ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
       revision: main
       files:
-      - path: observability/*/kustomization.yaml
+      - path: storage/*/kustomization.yaml
   template:
     metadata:
       name: '{{ .path.basename }}'
       labels:
-        k8s.home/tier: observability
+        k8s.home/tier: storage
     spec:
-      project: observability
+      project: storage
       source:
         repoURL: ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
         targetRevision: main
