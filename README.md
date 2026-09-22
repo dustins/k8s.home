@@ -79,8 +79,14 @@ internal CA chain are in `values.additional.yaml`. The private deploy key is
 ## Bootstrapping a fresh cluster
 
 Prerequisites on the machine driving the bootstrap: `kubectl`, `helm`
-(needed by `kubectl kustomize --enable-helm`), the `argocd` CLI, a kubeconfig
-with cluster-admin, and the read-only SSH deploy key for this repo.
+(needed by `kubectl kustomize --enable-helm`), the `argocd` CLI, and a
+kubeconfig with cluster-admin. The SSH deploy key is generated in step 3.
+On NixOS, get the `argocd` CLI with:
+
+```sh
+nix-channel --update
+nix-shell -p argocd
+```
 
 Prerequisites on the nodes that live outside this repo:
 
@@ -126,9 +132,15 @@ it itself once Traefik is up.
 kubectl -n argocd port-forward svc/argocd-server 8080:443 &
 argocd login localhost:8080 --username admin \
   --password "$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)"
+ssh-keygen -t ed25519 -f /tmp/id_ed25519 -C "forgejo" -N ""
+# In Forgejo: repo -> Settings -> Deploy Keys -> add /tmp/id_ed25519.pub (read-only)
 argocd repo add ssh://forgejo@git.core.infra.home/dustins/k8s.home.git \
-  --ssh-private-key-path ~/.ssh/<read-only-deploy-key>
+  --ssh-private-key-path /tmp/id_ed25519
 ```
+
+If `repo add` fails with `ssh: unable to authenticate, attempted methods
+[none publickey]`, the deploy key has not been added to the repo in Forgejo
+yet.
 
 The ApplicationSet git generators cannot produce anything until this
 credential exists, so this step gates everything that follows.
