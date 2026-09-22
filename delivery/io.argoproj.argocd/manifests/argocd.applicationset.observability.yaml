@@ -1,0 +1,76 @@
+---
+# Tier: observability — Cluster observability and dashboards: metrics-server, headlamp
+#
+# One Argo CD Application per observability/<app>/kustomization.yaml in this repo.
+# The Application name is the Helm release name and the destination namespace
+# is the Helm release namespace, both read from the kustomization's helmCharts
+# entry, so adding or removing an app is just adding or removing a directory.
+# Convention: every app directory is a kustomization with exactly one
+# helmCharts entry (that is what every directory here does today).
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: observability
+  namespace: argocd
+spec:
+  description: "Cluster observability and dashboards: metrics-server, headlamp"
+  sourceRepos:
+  - ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
+  destinations:
+  - server: https://kubernetes.default.svc
+    namespace: '*'
+  clusterResourceWhitelist:
+  - group: '*'
+    kind: '*'
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: observability
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  syncPolicy:
+    # Observability apps are safe to remove fully when their directory goes away.
+    preserveResourcesOnDeletion: false
+  generators:
+  - git:
+      repoURL: ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
+      revision: main
+      files:
+      - path: observability/*/kustomization.yaml
+  template:
+    metadata:
+      name: '{{ (index .helmCharts 0).releaseName }}'
+      labels:
+        k8s.home/tier: observability
+    spec:
+      project: observability
+      source:
+        repoURL: ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
+        targetRevision: main
+        path: '{{ .path.path }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ (index .helmCharts 0).namespace }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        # Server-side apply: cilium and cert-manager CRDs are too large for the
+        # client-side last-applied annotation (same reason the argocd install
+        # command uses --server-side).
+        - ServerSideApply=true
+        - CreateNamespace=true
+        - ApplyOutOfSyncOnly=true
+        # CRDs and admission webhooks (metallb, cert-manager, traefik) race
+        # their own CRs on a fresh cluster; retrying is what makes the
+        # bootstrap converge without manual ordering.
+        retry:
+          limit: 10
+          backoff:
+            duration: 15s
+            factor: 2
+            maxDuration: 5m

@@ -24,3 +24,11 @@ patches:
 resources:
 - manifests/argocd.namespace.yaml
 - manifests/argocd.ingressroute.yaml
+# One AppProject + ApplicationSet per tier directory of this repo. Argo CD
+# applies these as part of managing itself; on a fresh cluster the argocd
+# install command (see ./commands) applies them once to bootstrap.
+- manifests/argocd.applicationset.networking.yaml
+- manifests/argocd.applicationset.security.yaml
+- manifests/argocd.applicationset.storage.yaml
+- manifests/argocd.applicationset.observability.yaml
+- manifests/argocd.applicationset.delivery.yaml

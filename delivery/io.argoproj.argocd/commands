@@ -4,3 +4,13 @@ kubectl kustomize --enable-helm | kubectl apply --server-side --force-conflicts 
 
 # get admin password
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
+
+# bootstrap a fresh cluster
+# 1. install cilium by hand first (networking/io.cilium) — nothing schedules without a CNI
+# 2. run the install command above twice: the first pass installs the Argo CD CRDs, the
+#    second pass gets the AppProject/ApplicationSet resources in manifests/ past
+#    "no matches for kind" once the CRDs are established
+# 3. give Argo CD read access to this repo (one-time, key is not in git):
+#    argocd repo add ssh://forgejo@git.core.infra.home/dustins/k8s.home.git --ssh-private-key-path ~/.ssh/<read-only-deploy-key>
+# from then on the ApplicationSets create one Application per <tier>/<app>/ and Argo CD
+# manages everything in this repo, including itself.
