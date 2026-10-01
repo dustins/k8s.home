@@ -17,6 +17,7 @@ jobs:
       - name: Run Renovate
         run: renovate
         env:
+          RENOVATE_GITHUB_COM_TOKEN: ${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}
           RENOVATE_PLATFORM: forgejo
           RENOVATE_ENDPOINT: ${{ forgejo.server_url }}/api/v1/
           RENOVATE_TOKEN: ${{ secrets.RENOVATE_BOT_PAT }}
