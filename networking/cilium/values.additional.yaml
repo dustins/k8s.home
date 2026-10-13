@@ -1,6 +1,13 @@
 kubeProxyReplacement: true
 k8sServiceHost: 10.1.40.32
 k8sServicePort: 6443
+# MetalLB owns LoadBalancer address allocation in this cluster (see
+# networking/metallb). The Cilium chart defaults enableLBIPAM to true, which
+# leaves two controllers willing to write .status.loadBalancer.ingress on the
+# same Service. It only stays quiet today because no CiliumLoadBalancerIPPool
+# exists; create one by accident and the two start fighting over traefik's
+# 10.1.41.2.
+enableLBIPAM: false
 routingMode: "native"
 ipv4NativeRoutingCIDR: "10.42.0.0/16"
 autoDirectNodeRoutes: true
