@@ -9,7 +9,7 @@ helmCharts:
   releaseName: argocd
   version: 10.10.5
   repo: https://argoproj.github.io/argo-helm
-  additionalValuesFiles:                                                                                           
+  additionalValuesFiles:
   - values.additional.yaml
 
 patches:
