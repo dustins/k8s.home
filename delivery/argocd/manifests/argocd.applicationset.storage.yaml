@@ -16,7 +16,7 @@ metadata:
 spec:
   description: "Cluster storage: openebs (LocalPV ZFS)"
   sourceRepos:
-  - ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
+  - ssh://git@git.core.infra.home/dustins/k8s.home.git
   destinations:
   - server: https://kubernetes.default.svc
     namespace: '*'
@@ -37,7 +37,7 @@ spec:
     preserveResourcesOnDeletion: true
   generators:
   - git:
-      repoURL: ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
+      repoURL: ssh://git@git.core.infra.home/dustins/k8s.home.git
       revision: main
       files:
       - path: storage/*/kustomization.yaml
@@ -49,7 +49,7 @@ spec:
     spec:
       project: storage
       source:
-        repoURL: ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
+        repoURL: ssh://git@git.core.infra.home/dustins/k8s.home.git
         targetRevision: main
         path: '{{ .path.path }}'
       destination:
