@@ -6,7 +6,7 @@ helmCharts:
   namespace: traefik
   includeCRDs: true
   releaseName: traefik
-  version: 42.0.0
+  version: 42.1.0
   repo: https://traefik.github.io/charts
   additionalValuesFiles:
   - values.additional.yaml
