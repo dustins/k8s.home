@@ -1,0 +1,30 @@
+# Puts the LB-IPAM addresses on the wire. One node wins a per-service lease
+# and answers ARP for that service's VIP on the interfaces below; the others
+# stay quiet. This is the L2 half of what MetalLB's L2Advertisement used to do.
+apiVersion: cilium.io/v2alpha1
+kind: CiliumL2AnnouncementPolicy
+metadata:
+  name: home.k8s.cilium.l2announcementpolicy
+spec:
+  # No serviceSelector: announce every LoadBalancer service, which is what the
+  # single MetalLB L2Advertisement did for the whole pool.
+  #
+  # Announce only .status.loadBalancer.ingress, not .spec.externalIPs. Nothing
+  # in this cluster sets externalIPs, and leaving it off keeps an accidental
+  # externalIP from being advertised to the LAN.
+  loadBalancerIPs: true
+  externalIPs: false
+  # Every node is a candidate. The control planes here also run workloads, and
+  # they carry node.kubernetes.io/exclude-from-external-load-balancers -- which
+  # Cilium ignores for L2 announcements (cilium/cilium#49382), the same way
+  # MetalLB's speaker did under `ignoreExcludeLB: true`. If a node should ever
+  # stop announcing, exclude it here with an explicit label expression; the
+  # upstream label will not do it.
+  nodeSelector:
+    matchLabels:
+      kubernetes.io/os: linux
+  # Regex, not a plain name. k8s-svc-lb is the dedicated service-LB VLAN that
+  # exists on every node, and it is in the pinned `devices` list in
+  # values.additional.yaml -- the announcer only works on managed devices.
+  interfaces:
+  - ^k8s-svc-lb$

@@ -75,4 +75,6 @@ env:
 service:
   # -- Additional annotations applied to both TCP and UDP services (e.g. for cloud provider specific config)
   annotations:
-    metallb.universe.tf/loadBalancerIPs: 10.1.41.2
+    # Pins the VIP out of the Cilium LB-IPAM pool; see
+    # networking/cilium/manifests/cilium.loadbalancer-ip-pool.k8s-home.yaml.
+    lbipam.cilium.io/ips: 10.1.41.2

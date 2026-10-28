@@ -14,7 +14,6 @@ single Helm chart:
 | Tier            | App directory                  | Chart                | Namespace        |
 | --------------- | ------------------------------ | -------------------- | ---------------- |
 | `networking`    | `cilium`                       | cilium               | `kube-system`    |
-| `networking`    | `metallb`                      | metallb              | `metallb-system` |
 | `networking`    | `traefik`                      | traefik              | `traefik`        |
 | `security`      | `cert-manager`                 | cert-manager         | `cert-manager`   |
 | `security`      | `kubelet-csr-approver`         | kubelet-csr-approver | `kube-system`    |
@@ -29,7 +28,7 @@ Every app directory has the same shape:
 <tier>/<app>/
 ├── kustomization.yaml      # exactly one helmCharts entry: chart, version, repo, releaseName, namespace
 ├── values.additional.yaml  # our overrides on top of the chart's defaults
-├── manifests/              # optional raw resources (namespaces, IngressRoutes, MetalLB pools, ...)
+├── manifests/              # optional raw resources (namespaces, IngressRoutes, Cilium LB pools, ...)
 ├── commands                # notes on how to apply this directory by hand
 └── charts/                 # gitignored; populated by `kustomize --enable-helm` when rendering locally
 ```
@@ -93,7 +92,7 @@ Prerequisites on the nodes that live outside this repo:
 
 - The API server is reachable at `10.1.40.32:6443` (cilium runs with
   kube-proxy replacement and points at it directly).
-- A `k8s-svc-lb` interface exists on every node for MetalLB L2 advertisement.
+- A `k8s-svc-lb` interface exists on every node for Cilium L2 announcements.
 - A ZFS pool exists for OpenEBS ZFS LocalPV.
 - `/run/secrets/services/traefik/technitiumApiToken` and
   `/etc/ssl/certs/ca-bundle.crt` exist on nodes that can run Traefik. Traefik
@@ -107,6 +106,10 @@ installed before Argo CD can exist:
 
 ```sh
 cd networking/cilium
+kubectl kustomize --enable-helm | kubectl apply -f -
+# the CiliumLoadBalancerIPPool and CiliumL2AnnouncementPolicy fail on the
+# first pass because the operator has not registered their CRDs yet; once
+# the operator is up, run it again
 kubectl kustomize --enable-helm | kubectl apply -f -
 ```
 
@@ -152,19 +155,18 @@ Within a minute the five ApplicationSets generate one Application per
 directory and start syncing all of them in parallel. Cilium is adopted rather
 than reinstalled. Expect a few apps to show `Progressing` or a failed attempt
 for a few minutes while their dependencies arrive: Traefik's CRDs unblock the
-IngressRoutes, MetalLB's webhook unblocks its own `IPAddressPool`, and MetalLB
-hands Traefik its LoadBalancer IP at `10.1.41.2`. Once it settles,
-`argocd.k8s.home` works and the port-forward can go.
+IngressRoutes, and Cilium LB-IPAM hands Traefik its LoadBalancer IP at
+`10.1.41.2`. Once it settles, `argocd.k8s.home` works and the port-forward can
+go.
 
 ```sh
 kubectl -n argocd get applications
 ```
 
-Optionally, MetalLB and Traefik can also be applied by hand (same command as
-cilium, MetalLB may need two passes) between steps 1 and 2. That makes the
-Argo CD UI reachable at `argocd.k8s.home` immediately and avoids the
-IngressRoute error, but it is not required. Argo CD adopts anything already
-installed.
+Optionally, Traefik can also be applied by hand (same command as cilium)
+between steps 1 and 2. That makes the Argo CD UI reachable at
+`argocd.k8s.home` immediately and avoids the IngressRoute error, but it is not
+required. Argo CD adopts anything already installed.
 
 ## Ordering and dependencies
 
@@ -179,8 +181,8 @@ convergence. The actual dependencies are:
 | Argo CD CRDs        | the ApplicationSets in Argo CD's own directory         | **Hard at apply time.** Handled by running the install twice.              |
 | repo credential     | every ApplicationSet                                   | **Hard.** Nothing generates until `argocd repo add` has run.               |
 | traefik CRDs        | `IngressRoute` in argocd and headlamp                  | Soft. Apply fails until the CRD exists, retry converges.                   |
-| metallb CRDs/webhook| `IPAddressPool`, `L2Advertisement` in metallb itself   | Soft. Same Application, retry converges.                                   |
-| metallb             | traefik's LoadBalancer IP                              | Soft. The Service sits `<pending>` until MetalLB assigns it. No failure.   |
+| cilium CRDs         | `CiliumLoadBalancerIPPool`, `CiliumL2AnnouncementPolicy` in cilium itself | Soft. Same Application, retry converges.                |
+| cilium LB-IPAM      | traefik's LoadBalancer IP                              | Soft. The Service sits `<pending>` until LB-IPAM assigns it. No failure.   |
 | kubelet-csr-approver| metrics-server scraping kubelets                       | Soft, runtime only. Metrics are empty until CSRs get approved.             |
 
 Only the first three are hard, and all three are handled in the bootstrap
@@ -237,11 +239,44 @@ grouped PR for Helm chart versions. Merging the PR is the upgrade.
 **Hand edits in the cluster get reverted.** `selfHeal` is on everywhere. Make
 the change here instead.
 
+## One-time: retiring MetalLB
+
+LoadBalancer addressing moved from MetalLB to Cilium's own LB-IPAM and L2
+announcer. Deleting `networking/metallb/` removed the Application, but the
+networking tier has `preserveResourcesOnDeletion: true`, so **the MetalLB
+workload keeps running in the cluster until it is removed by hand**. Leaving it
+up is not harmless: its controller still allocates from its own
+`IPAddressPool` and its speaker still ARPs for `10.1.41.2`, so both it and
+Cilium would fight over the same Service and the same VIP.
+
+On a cluster that was running MetalLB, do this once after this commit syncs:
+
+```sh
+# confirm cilium took over before tearing anything down
+kubectl -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}{"\n"}'
+kubectl get ciliumloadbalancerippools
+kubectl -n kube-system get leases | grep l2announce
+
+# then remove metallb: CRs first, so no webhook rejects the CRD delete
+kubectl -n metallb-system delete l2advertisements,ipaddresspools --all
+kubectl delete crd -l app.kubernetes.io/name=metallb
+kubectl delete namespace metallb-system
+kubectl delete clusterrole,clusterrolebinding -l app.kubernetes.io/name=metallb
+kubectl delete validatingwebhookconfiguration,mutatingwebhookconfiguration \
+  -l app.kubernetes.io/name=metallb
+```
+
+A fresh cluster never had MetalLB and can skip this entirely.
+
 ## Cluster-specific values worth knowing
 
 - Pod CIDR `10.42.0.0/16`, native routing, no tunnel, kube-proxy replacement.
-- MetalLB pools: `10.1.41.2-10.1.41.31` and `10.1.41.127-10.1.41.250`. The
-  gap leaves room for bare-metal interface IPs.
+- LoadBalancer addressing is Cilium's, not MetalLB's: LB-IPAM allocates from
+  `CiliumLoadBalancerIPPool` and the L2 announcer ARPs for the result on the
+  `k8s-svc-lb` interface. Both live in `networking/cilium/manifests/`.
+- LoadBalancer pool blocks: `10.1.41.2-10.1.41.31` and
+  `10.1.41.127-10.1.41.250`. The gap leaves room for bare-metal interface IPs.
+  A Service pins an address with `lbipam.cilium.io/ips`.
 - Traefik answers on `10.1.41.2` and issues a wildcard `*.k8s.home`
   certificate from the internal ACME CA at `ca.core.infra.home` using a Technitium
   DNS-01 challenge.

@@ -11,4 +11,6 @@ helmCharts:
   additionalValuesFiles:
   - values.additional.yaml
 
-resources: []
+resources:
+- manifests/cilium.loadbalancer-ip-pool.k8s-home.yaml
+- manifests/cilium.l2-announcement-policy.k8s-home.yaml

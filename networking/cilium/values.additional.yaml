@@ -1,13 +1,26 @@
 kubeProxyReplacement: true
 k8sServiceHost: 10.1.40.32
 k8sServicePort: 6443
-# MetalLB owns LoadBalancer address allocation in this cluster (see
-# networking/metallb). The Cilium chart defaults enableLBIPAM to true, which
-# leaves two controllers willing to write .status.loadBalancer.ingress on the
-# same Service. It only stays quiet today because no CiliumLoadBalancerIPPool
-# exists; create one by accident and the two start fighting over traefik's
-# 10.1.41.2.
-enableLBIPAM: false
+
+# Cilium owns LoadBalancer services end to end: LB-IPAM allocates the address
+# (manifests/cilium.loadbalancer-ip-pool.k8s-home.yaml) and the L2 announcer
+# ARPs for it (manifests/cilium.l2-announcement-policy.k8s-home.yaml). This
+# replaces MetalLB, which used to do both. enableLBIPAM is the chart default;
+# it is spelled out here because it was explicitly disabled while MetalLB held
+# the job, and nothing else may write .status.loadBalancer.ingress.
+enableLBIPAM: true
+
+# L2 announcements need kube-proxy replacement (set above) and a k8s client
+# that can keep up with lease renewals: every announced service holds a Lease
+# that the elected node renews every leaseRenewDeadline (5s by default). The
+# upstream sizing rule is qps >= #services * (1 / leaseRenewDeadline), so the
+# chart defaults (10/20) only cover ~50 services. These values leave room to
+# grow well past the single service we announce today.
+l2announcements:
+  enabled: true
+k8sClientRateLimit:
+  qps: 50
+  burst: 100
 
 # Pin the eBPF datapath to an explicit device list rather than letting Cilium
 # auto-detect it. With `devices` empty the managed set is recomputed on every
@@ -16,11 +29,13 @@ enableLBIPAM: false
 # The fabric VLANs (incus/k8s/k8s-svc-lb) all sit on br-fabric, which has a
 # single physical uplink, so one NIC carrier flap takes all three down together
 # and churns the device set. While that is in flight the LB program on
-# k8s-svc-lb is detached, traffic to the MetalLB VIP (10.1.41.2) is no longer
-# DNATed, and it falls through to the host stack -- which cannot ARP-resolve a
-# VIP that MetalLB never assigns to an interface, so it blackholes and upstream
-# proxies return 502. These four names are stable on every compute-infra host:
-# VLAN netdevs are named after the VLAN key in the core.home inventory.
+# k8s-svc-lb is detached, so traffic to the LoadBalancer VIP (10.1.41.2) is no
+# longer DNATed and falls through to the host stack, which has no route for a
+# VIP that lives only in eBPF -- it blackholes and upstream proxies return 502.
+# The L2 announcer is bound to the same device set, so a churn window also
+# drops the ARP replies that put the VIP on the wire in the first place.
+# These four names are stable on every compute-infra host: VLAN netdevs are
+# named after the VLAN key in the core.home inventory.
 devices:
   - infra
   - incus

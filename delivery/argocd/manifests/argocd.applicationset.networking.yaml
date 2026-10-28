@@ -1,5 +1,5 @@
 ---
-# Tier: networking — Cluster networking: CNI (cilium), LoadBalancer (metallb), ingress (traefik)
+# Tier: networking — Cluster networking: CNI + LoadBalancer (cilium), ingress (traefik)
 #
 # One Argo CD Application per networking/<app>/kustomization.yaml in this repo.
 # The Application name is the app directory name (e.g. cilium) and the
@@ -14,7 +14,7 @@ metadata:
   name: networking
   namespace: argocd
 spec:
-  description: "Cluster networking: CNI (cilium), LoadBalancer (metallb), ingress (traefik)"
+  description: "Cluster networking: CNI + LoadBalancer (cilium), ingress (traefik)"
   sourceRepos:
   - ssh://forgejo@git.core.infra.home/dustins/k8s.home.git
   destinations:
@@ -66,7 +66,7 @@ spec:
         - ServerSideApply=true
         - CreateNamespace=true
         - ApplyOutOfSyncOnly=true
-        # CRDs and admission webhooks (metallb, cert-manager, traefik) race
+        # CRDs and admission webhooks (cilium, cert-manager, traefik) race
         # their own CRs on a fresh cluster; retrying is what makes the
         # bootstrap converge without manual ordering.
         retry:

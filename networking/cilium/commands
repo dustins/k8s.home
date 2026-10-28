@@ -1,2 +1,4 @@
-# install commands
+# install commands (the CiliumLoadBalancerIPPool and CiliumL2AnnouncementPolicy
+# in manifests/ need CRDs the operator registers at startup, so a cold cluster
+# needs two passes)
 kubectl kustomize --enable-helm | kubectl apply -f -

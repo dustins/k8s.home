@@ -1,0 +1,22 @@
+# The pool lists the IP addresses Cilium LB-IPAM is allowed to hand out to
+# LoadBalancer services. You can have as many pools as you want; with no
+# .spec.serviceSelector this one is the cluster default and serves every
+# LoadBalancer service.
+#
+# A service asks for a specific address with the
+# `lbipam.cilium.io/ips: <ip>` annotation (that is how traefik pins
+# 10.1.41.2). Without it, the next free address in the pool is assigned.
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: home.k8s.cilium.loadbalancerippool
+spec:
+  # Each `start`/`stop` pair, or each `cidr`, is one block. The gap between
+  # the two ranges leaves room for bare-metal interface IPs on the
+  # k8s-svc-lb VLAN.
+  blocks:
+  - start: 10.1.41.2
+    stop: 10.1.41.31
+  - start: 10.1.41.127
+    stop: 10.1.41.250
+  # - cidr: 2600:4040:203c:5900::/64

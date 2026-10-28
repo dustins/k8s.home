@@ -66,7 +66,7 @@ spec:
         - ServerSideApply=true
         - CreateNamespace=true
         - ApplyOutOfSyncOnly=true
-        # CRDs and admission webhooks (metallb, cert-manager, traefik) race
+        # CRDs and admission webhooks (cilium, cert-manager, traefik) race
         # their own CRs on a fresh cluster; retrying is what makes the
         # bootstrap converge without manual ordering.
         retry:
