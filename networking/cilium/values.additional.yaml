@@ -35,6 +35,19 @@ rollOutCiliumPods: true
 operator:
   rollOutPods: true
 
+# Roll the agents one at a time. The chart defaults the agent DaemonSet to
+# maxUnavailable: 2, and this cluster has exactly two nodes -- so a default
+# roll takes down BOTH L2 announcers at once. While that window is open no
+# node holds the per-service lease or answers ARP for 10.1.41.2, so the VIP
+# goes dark and the lease scrambles on the way back up (7 transitions in 80s
+# on the 1.20.2 -> 1.20.4 bump). rollOutCiliumPods above means every values
+# change and every Renovate chart bump triggers that roll, which is what made
+# the flapping recurring rather than one-off. At 1 the surviving agent keeps
+# announcing and the lease does a single clean handoff instead.
+updateStrategy:
+  rollingUpdate:
+    maxUnavailable: 1
+
 # Pin the eBPF datapath to an explicit device list rather than letting Cilium
 # auto-detect it. With `devices` empty the managed set is recomputed on every
 # netlink event, and each change drives a full datapath reload that re-links
