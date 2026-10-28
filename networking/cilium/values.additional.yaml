@@ -22,6 +22,19 @@ k8sClientRateLimit:
   qps: 50
   burst: 100
 
+# Restart on config change. Both default to false in the chart, which under
+# GitOps means Argo CD rewrites the cilium-config ConfigMap and nothing ever
+# reads it: the agent and the operator parse their feature flags once at
+# startup. A values change goes Synced while the running pods keep the old
+# flags. Everything above is exactly that kind of flag, so without these the
+# cutover would look applied and still take no L2 leases and leave no status
+# on the IP pool. With these on, the chart stamps a config checksum onto the
+# agent DaemonSet and the operator Deployment, so a values change rolls the
+# pods that depend on it.
+rollOutCiliumPods: true
+operator:
+  rollOutPods: true
+
 # Pin the eBPF datapath to an explicit device list rather than letting Cilium
 # auto-detect it. With `devices` empty the managed set is recomputed on every
 # netlink event, and each change drives a full datapath reload that re-links
