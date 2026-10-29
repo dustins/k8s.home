@@ -28,6 +28,16 @@ providers:
     allowCrossNamespace: true
 
 deployment:
+  # Two replicas, one per node (see topologySpreadConstraints below). This is
+  # not only about availability. With a single replica the LoadBalancer VIP has
+  # to be served across nodes whenever the Cilium L2 announcer lease sits on the
+  # node that is not running traefik. In that state both nodes rev-NAT the VIP
+  # and the client receives two conflicting SYN-ACKs, so the handshake is reset
+  # and the DMZ proxy returns 502. Captured 2026-10-29: the client ACKed a
+  # sequence number the announcing node had never sent, which that node then
+  # correctly RST'd, and the TLS ClientHello was never sent. A backend on every
+  # node removes the cross-node path entirely.
+  replicas: 2
   additionalVolumes:
   - name: technitium-token
     hostPath:
@@ -52,6 +62,25 @@ additionalVolumeMounts:
   mountPath: /tmp/ca-bundle.crt
   readOnly: true
 
+# KNOWN LIMITATION -- read this before adding replicas or debugging cert churn.
+# Traefik CE has no distributed ACME storage, and acme.storage below is
+# pod-local (the chart's `tmp` emptyDir, not a PVC), so EACH replica resolves
+# its own certificate independently. With two replicas both run the same DNS-01
+# challenge against Technitium for _acme-challenge.k8s.home and can clobber each
+# other's TXT record, which surfaces as a failed challenge plus a retry while
+# Traefik serves its self-signed default certificate.
+#
+# The blast radius is small in this topology: the DMZ proxy sets
+# `proxy_ssl_verify off`, so everything arriving via *.swigg.net is unaffected.
+# Only clients hitting *.k8s.home directly would see a warning during a race.
+# Note the single-replica setup already re-issued on every pod restart, since
+# the storage was always ephemeral -- this makes that more frequent, not new.
+#
+# The real fix is to stop Traefik doing ACME at all: let cert-manager (already
+# installed, currently with zero issuers) own the wildcard and hand it to
+# Traefik as a TLSStore default certificate. That needs a DNS-01 solver for
+# Technitium, which cert-manager has no built-in support for -- it would mean a
+# webhook solver or RFC2136 -- so it is deliberately out of scope here.
 certificatesResolvers:
   swigg-ca:
     acme:
@@ -78,3 +107,22 @@ service:
     # Pins the VIP out of the Cilium LB-IPAM pool; see
     # networking/cilium/manifests/cilium.loadbalancer-ip-pool.k8s-home.yaml.
     lbipam.cilium.io/ips: 10.1.41.2
+
+# Keep the two replicas on separate nodes. DoNotSchedule rather than
+# ScheduleAnyway on purpose: two pods landing on one node would recreate the
+# cross-node VIP path this is meant to eliminate. During a single-node outage
+# only one replica runs, which is the right trade -- the surviving pod is on the
+# node that will hold the announcer lease anyway.
+topologySpreadConstraints:
+- maxSkew: 1
+  topologyKey: kubernetes.io/hostname
+  whenUnsatisfiable: DoNotSchedule
+  labelSelector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+      app.kubernetes.io/instance: traefik-traefik
+
+# Keep one replica serving through voluntary disruptions (node drain, rollout).
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
