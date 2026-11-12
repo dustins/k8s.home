@@ -1,0 +1,12 @@
+---
+# Every Argo CD component serves its metrics at /metrics on its own port, so the
+# per-component routes in argocd.ingressroute.yaml have to rewrite their
+# /metrics/<component> path back to /metrics before hitting the backend.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: home.k8s.argocd.middleware.metrics-path
+  namespace: argocd
+spec:
+  replacePath:
+    path: /metrics

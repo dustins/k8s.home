@@ -8,6 +8,47 @@ spec:
   entryPoints:
     - websecure
   routes:
+  # Prometheus metrics. Argo CD has no aggregated metrics endpoint -- each
+  # component exposes its own, on its own port -- so the application controller
+  # (argocd_app_*, argocd_cluster_*, the numbers people actually want) gets the
+  # bare /metrics path and the rest hang off sub-paths. The Services these
+  # target only exist because *.metrics.enabled is set in values.additional.yaml.
+  # Ordering here is for readability: Traefik ranks routes by rule length, so
+  # the Path rules already outrank the bare-Host catch-all below.
+  - kind: Rule
+    match: Host(`argocd.k8s.home`) && Path(`/metrics`)
+    services:
+    - name: argocd-application-controller-metrics
+      namespace: argocd
+      port: 8082
+  - kind: Rule
+    match: Host(`argocd.k8s.home`) && Path(`/metrics/server`)
+    middlewares:
+    - name: home.k8s.argocd.middleware.metrics-path
+      namespace: argocd
+    services:
+    - name: argocd-server-metrics
+      namespace: argocd
+      port: 8083
+  - kind: Rule
+    match: Host(`argocd.k8s.home`) && Path(`/metrics/repo-server`)
+    middlewares:
+    - name: home.k8s.argocd.middleware.metrics-path
+      namespace: argocd
+    services:
+    - name: argocd-repo-server-metrics
+      namespace: argocd
+      port: 8084
+  - kind: Rule
+    match: Host(`argocd.k8s.home`) && Path(`/metrics/applicationset-controller`)
+    middlewares:
+    - name: home.k8s.argocd.middleware.metrics-path
+      namespace: argocd
+    services:
+    - name: argocd-applicationset-controller-metrics
+      namespace: argocd
+      port: 8080
+  # The UI and API. Last because it matches everything else on the host.
   - kind: Rule
     match: Host(`argocd.k8s.home`)
     services:

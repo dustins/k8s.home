@@ -24,6 +24,7 @@ patches:
 resources:
 - manifests/argocd.namespace.yaml
 - manifests/argocd.ingressroute.yaml
+- manifests/argocd.middleware.metrics.yaml
 # One AppProject + ApplicationSet per tier directory of this repo. Argo CD
 # applies these as part of managing itself; on a fresh cluster the argocd
 # install command (see ./commands) applies them once to bootstrap.

@@ -29,3 +29,25 @@ configs:
         qRxSYRLBtMrX6o9gyQOtxSxa4M8zF1brF5pHWBAkAiEA9isNhjkV6Lkv507coG6L
         8sLCPc3EmMAVqHGzaDj0tRw=
         -----END CERTIFICATE-----
+
+# Per-component metrics Services. Every Argo CD component already listens on a
+# metrics port inside its pod, but the chart ships the Services in front of them
+# disabled, so there is nothing for an IngressRoute to target. Turning them on
+# is what makes manifests/argocd.ingressroute.yaml able to serve /metrics.
+# The matching serviceMonitor blocks stay off: there is no Prometheus Operator
+# in this cluster, so its CRDs do not exist and rendering one would fail.
+controller:
+  metrics:
+    enabled: true
+
+server:
+  metrics:
+    enabled: true
+
+repoServer:
+  metrics:
+    enabled: true
+
+applicationSet:
+  metrics:
+    enabled: true
