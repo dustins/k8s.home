@@ -6,7 +6,7 @@ helmCharts:
   namespace: kube-system
   includeCRDs: true
   releaseName: kubelet-csr-approver
-  version: 1.2.15
+  version: 1.2.16
   repo: https://postfinance.github.io/kubelet-csr-approver
   additionalValuesFiles:
   - values.additional.yaml
