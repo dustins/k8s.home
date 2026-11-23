@@ -33,3 +33,4 @@ resources:
 - manifests/argocd.applicationset.storage.yaml
 - manifests/argocd.applicationset.observability.yaml
 - manifests/argocd.applicationset.delivery.yaml
+- manifests/argocd.applicationset.recovery.yaml

@@ -29,5 +29,14 @@
       "matchDatasources": ["docker"],
       "groupName": "container image tags"
     }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Velero loads its provider plugins as init containers declared in values.additional.yaml. No built-in manager looks there: helm-values only matches values.yaml, and the kustomize manager only reads helmCharts entries. Uses managerFilePatterns rather than the deprecated fileMatch used by the built-in managers above.",
+      "managerFilePatterns": ["/(^|/)values\\.additional\\.ya?ml$/"],
+      "matchStrings": ["image:\\s*(?<depName>velero/velero-plugin-[a-z0-9-]+):(?<currentValue>v[\\w.-]+)"],
+      "datasourceTemplate": "docker"
+    }
   ]
 }

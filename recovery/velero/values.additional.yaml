@@ -1,0 +1,193 @@
+# Velero backs up the Kubernetes API objects of this cluster to a Backblaze B2
+# bucket over B2's S3-compatible API. Volume *data* is deliberately not backed
+# up yet -- see the "volume data" section at the bottom for what turning it on
+# will look like once Ceph replaces OpenEBS ZFS LocalPV.
+
+# The chart ships no provider plugins; each one is loaded as an init container
+# that copies its binary into the shared /target (plugins) emptyDir. Backblaze
+# B2 speaks S3, so the AWS plugin is the right one -- there is no B2-native
+# plugin and none is needed.
+initContainers:
+- name: velero-plugin-for-aws
+  image: velero/velero-plugin-for-aws:v1.14.4
+  imagePullPolicy: IfNotPresent
+  volumeMounts:
+  - mountPath: /target
+    name: plugins
+
+# The B2 application key is not a Kubernetes Secret at all: it is a sops-nix
+# secret on the node, mounted over hostPath, exactly as Traefik gets its
+# Technitium token. core.home declares it in
+# roles/compute-infra/services/velero.nix behind
+# rolesConfig.compute-infra.veleroBackup; nothing about the credential lives
+# in this repo or in the cluster's etcd.
+#
+# This is why there is no `kubectl create secret` bootstrap step: the
+# credential is a property of the node, so it survives a cluster rebuild on
+# its own. The alternative considered was a SOPS-encrypted Secret in this
+# repo decrypted by a KSOPS plugin in argocd-repo-server, which was rejected:
+# the age key would still have to be created by hand (so the manual step
+# moves rather than disappears) and it puts a third-party plugin in the
+# render path of every app in this repo.
+credentials:
+  useSecret: false
+
+# Velero's image runs as paketo's `cnb` user, uid/gid 1000, and the chart sets
+# no security context of its own. The secret on the node is 0440 root:velero,
+# so the pod needs that group to read it. 65531 must match
+# users.groups.velero.gid in core.home's roles/compute-infra/services/velero.nix.
+#
+# supplementalGroups and not fsGroup: fsGroup only re-owns volume types that
+# support ownership management, and hostPath is not one of them -- the file
+# keeps its on-node ownership, so the process has to carry the gid instead.
+podSecurityContext:
+  supplementalGroups:
+  - 65531
+
+# credentials.useSecret: false above also drops the chart's
+# AWS_SHARED_CREDENTIALS_FILE env var, since the chart only sets it alongside
+# the Secret it would otherwise have mounted. Point it at the hostPath mount.
+extraVolumes:
+- name: b2-credentials
+  hostPath:
+    path: /run/secrets/roles/compute-infra/velero/credentials
+    type: File
+
+extraVolumeMounts:
+- name: b2-credentials
+  mountPath: /run/secrets/velero/credentials
+  readOnly: true
+
+configuration:
+  backupStorageLocation:
+  - name: b2
+    provider: aws
+    default: true
+    bucket: swigg-k8s-home
+    prefix: k8s.home
+    config:
+      # B2's own region naming, not AWS's: these are <geo>-<nnn>, so there is
+      # no us-east-1 here and s3.us-east-1.backblazeb2.com does not resolve.
+      # Both values came from b2_authorize_account's s3ApiUrl for this
+      # bucket's key, which is the authoritative source if they ever need
+      # re-checking. The endpoint always mirrors the region.
+      region: us-west-002
+      s3Url: https://s3.us-west-002.backblazeb2.com
+      # B2 does not support virtual-hosted-style addressing for the S3 API.
+      s3ForcePathStyle: "true"
+      # velero-plugin-for-aws defaults this to CRC32. Empty string disables
+      # checksums, which is the documented setting for S3-compatible stores
+      # that do not support them.
+      #
+      # Kept as a deliberate, conservative choice rather than a necessity: a
+      # signed PutObject against this bucket was tested both ways and B2
+      # accepted CRC32 fine, so the old advice that B2 rejects `aws-chunked`
+      # checksummed uploads outright no longer holds. What was *not* tested is
+      # the multipart path, which is the one that historically broke on
+      # S3-compatible stores and the one a real backup of any size will take.
+      # If you ever want the default back, drop this line and watch the first
+      # large backup rather than the first backup.
+      checksumAlgorithm: ""
+
+  # Explicit rather than inherited: no backup taken from this cluster may move
+  # volume data until the opt-in story at the bottom of this file is in place.
+  # Velero still records PVC and PV *objects* -- only the bytes are skipped.
+  defaultVolumesToFsBackup: false
+
+  extraEnvVars:
+  - name: AWS_SHARED_CREDENTIALS_FILE
+    value: /run/secrets/velero/credentials
+
+# The chart's velero-upgrade-crds Job is annotated
+# `helm.sh/hook: pre-install,pre-upgrade`, and Argo CD maps those onto its own
+# PreSync phase even for a kustomize-rendered chart. Argo CD cannot tell an
+# install from an upgrade -- everything is a sync -- so leaving this on runs a
+# privileged `velero install --crds-only` pod on *every* sync, and a failure
+# there fails the whole sync. The CRDs are already in this kustomization via
+# includeCRDs: true and are applied declaratively with ServerSideApply, so the
+# Job is redundant machinery and nothing but a failure mode here.
+upgradeCRDs: false
+
+# No VolumeSnapshotLocation. That resource is for a cloud provider's own disk
+# snapshot API (EBS, GCE PD); this cluster has none, and the CSI path does not
+# use it. Leaving it on would have the chart render an empty, invalid VSL.
+snapshotsEnabled: false
+
+# The node-agent DaemonSet is the thing that actually reads and writes volume
+# bytes (fs-backup, and the Kopia data mover). Nothing needs it while volume
+# data is excluded, and running it would mount /var/lib/kubelet/pods on every
+# node for no reason.
+deployNodeAgent: false
+
+# Renders a velero.io/v1 Schedule named `velero-daily`.
+schedules:
+  daily:
+    schedule: "0 2 * * *"
+    template:
+      # 30 days. Velero's own gc controller deletes the backup and its objects
+      # from B2 when the TTL expires, so do NOT also put a B2 lifecycle rule
+      # on this prefix -- B2 deleting objects out from under Velero leaves
+      # Backup CRs pointing at data that is gone.
+      ttl: 720h
+      storageLocation: b2
+      includedNamespaces:
+      - '*'
+      # Belt and braces with defaultVolumesToFsBackup above: this blocks the
+      # cloud-provider/CSI snapshot path, that one blocks the filesystem path.
+      snapshotVolumes: false
+      defaultVolumesToFsBackup: false
+
+# ---------------------------------------------------------------------------
+# volume data (not enabled yet)
+#
+# When Ceph lands, the plan is Velero's built-in CSI snapshot data mover, not a
+# second tool. It takes a CSI VolumeSnapshot, then a short-lived pod reads the
+# snapshot and uploads it to this same B2 bucket through Kopia, which is
+# content-addressed -- so the first run of a volume is full and every run after
+# it is a diff. Restore is the same `velero restore create` used for the API
+# objects, which is the reason to prefer it over VolSync/k8up here.
+#
+# Turning it on is four changes:
+#
+#   1. deployNodeAgent: true          (the mover pods run under the node-agent)
+#      The node-agent is a DaemonSet and needs the B2 credential too, so it
+#      needs its own copy of the hostPath mount and the env var above, under
+#      nodeAgent.extraVolumes / nodeAgent.extraVolumeMounts /
+#      nodeAgent.extraEnvVars, plus the supplementalGroup under
+#      nodeAgent.podSecurityContext. That means every node that can run it
+#      needs rolesConfig.compute-infra.veleroBackup = true in core.home.
+#      Velero 1.14+ also runs repository maintenance in separate Jobs whose
+#      pod spec Velero builds itself -- verify those inherit the server's
+#      volumes before relying on this, because if they do not, the credential
+#      has to become a real Secret and the hostPath approach stops working.
+#   2. configuration:
+#        features: EnableCSI
+#      Still required as of 1.18 and still silent when missing: a backup with
+#      snapshotMoveData set runs to Completed with zero DataUploads and no
+#      error that names the flag (velero-io/velero#10299). Check
+#      `kubectl -n velero get datauploads` after the first run, not the phase.
+#   3. A VolumeSnapshotClass for the Ceph driver, labelled
+#      velero.io/csi-volumesnapshot-class: "true", under manifests/.
+#      rook-ceph ships the snapshot controller; OpenEBS ZFS LocalPV does not
+#      work here even though it has CSI snapshots, because they are node-local.
+#   4. A second schedule, opt-in by label so volumes are declared rather than
+#      swept up (which is the whole point of doing it this way):
+#
+#        volumes:
+#          schedule: "0 3 * * *"
+#          template:
+#            ttl: 720h
+#            storageLocation: b2
+#            snapshotMoveData: true
+#            includedNamespaces:
+#            - '*'
+#            orLabelSelectors:
+#            - matchLabels:
+#                backup.k8s.home/enabled: "true"
+#
+#      Then label the PVCs that should travel:
+#        kubectl -n <ns> label pvc <name> backup.k8s.home/enabled=true
+#
+# The daily schedule above stays as it is -- objects every night regardless of
+# whether a volume is opted in, so the cluster is always rebuildable.
+# ---------------------------------------------------------------------------

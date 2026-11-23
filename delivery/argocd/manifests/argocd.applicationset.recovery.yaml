@@ -1,0 +1,82 @@
+---
+# Tier: recovery — Backup and disaster recovery: velero (to Backblaze B2)
+#
+# One Argo CD Application per recovery/<app>/kustomization.yaml in this repo.
+# The Application name is the app directory name (e.g. velero) and the
+# destination namespace is the Helm release namespace read from the
+# kustomization's helmCharts entry, so adding or removing an app is just
+# adding or removing a directory.
+# Convention: every app directory is a kustomization with exactly one
+# helmCharts entry (that is what every directory here does today).
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: recovery
+  namespace: argocd
+spec:
+  description: "Backup and disaster recovery: velero (to Backblaze B2)"
+  sourceRepos:
+  - ssh://git@git.core.infra.home/dustins/k8s.home.git
+  destinations:
+  - server: https://kubernetes.default.svc
+    namespace: '*'
+  clusterResourceWhitelist:
+  - group: '*'
+    kind: '*'
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: recovery
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  syncPolicy:
+    # Deleting an app directory removes the Application but leaves the workload
+    # running. Velero's Backup CRs are the only index of what is in the B2
+    # bucket, and the hand-created velero-b2 Secret is not in git, so tearing
+    # the namespace down on a directory delete would orphan the bucket and
+    # throw away the credential at the same time.
+    preserveResourcesOnDeletion: true
+  generators:
+  - git:
+      repoURL: ssh://git@git.core.infra.home/dustins/k8s.home.git
+      revision: main
+      files:
+      - path: recovery/*/kustomization.yaml
+  template:
+    metadata:
+      name: '{{ .path.basename }}'
+      labels:
+        k8s.home/tier: recovery
+    spec:
+      project: recovery
+      source:
+        repoURL: ssh://git@git.core.infra.home/dustins/k8s.home.git
+        targetRevision: main
+        path: '{{ .path.path }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ (index .helmCharts 0).namespace }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        # Server-side apply: cilium and cert-manager CRDs are too large for the
+        # client-side last-applied annotation (same reason the argocd install
+        # command uses --server-side). Velero's CRDs are in the same bracket.
+        - ServerSideApply=true
+        - CreateNamespace=true
+        - ApplyOutOfSyncOnly=true
+        # CRDs and admission webhooks (cilium, cert-manager, traefik) race
+        # their own CRs on a fresh cluster; retrying is what makes the
+        # bootstrap converge without manual ordering. Here it is the velero
+        # Schedule racing the Schedule CRD from the same chart.
+        retry:
+          limit: 10
+          backoff:
+            duration: 15s
+            factor: 2
+            maxDuration: 5m

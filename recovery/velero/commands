@@ -1,0 +1,95 @@
+# install commands
+kubectl kustomize --enable-helm | kubectl apply --server-side --force-conflicts -f -
+# server-side apply: the Velero CRDs (Backup, Restore, Schedule, DataUpload)
+# are too large for the client-side last-applied annotation, same as cilium
+# and cert-manager.
+
+# ---------------------------------------------------------------------------
+# one-time: Backblaze B2 bucket and application key
+#
+# Both of these are prerequisites. Until they exist the velero Application
+# syncs fine but the BackupStorageLocation goes Unavailable and every backup
+# fails, so do this before (or right after) the first sync.
+#
+# Install the CLI on NixOS with: nix-shell -p backblaze-b2
+# b2 account authorize   # master applicationKeyId + applicationKey
+
+# 1. private bucket, with a lifecycle rule that keeps only the current version.
+#    B2 defaults to keeping every version forever: when Velero's gc controller
+#    deletes an expired backup, B2 only *hides* the objects and keeps billing
+#    for them. This rule is what makes the 720h ttl actually reclaim space.
+#    The rule goes on `bucket create` rather than `bucket update` because
+#    update replaces the whole rule set and would silently drop any other rule.
+b2 bucket create --lifecycle-rule \
+  '{"fileNamePrefix":"","daysFromHidingToDeleting":1,"daysFromUploadingToHiding":null}' \
+  swigg-k8s-home allPrivate
+
+# Do NOT enable Object Lock on this bucket. Velero prunes its own expired
+# backups, and a lock makes those deletes fail forever. If immutable backups
+# are wanted later, use a second bucket and a second BackupStorageLocation
+# with a longer-lived schedule, rather than locking this one.
+
+# 2. application key scoped to just that bucket. deleteFiles is required or
+#    ttl expiry cannot prune.
+b2 key create --bucket swigg-k8s-home swigg-k8s-home \
+  listBuckets,listFiles,readFiles,writeFiles,deleteFiles
+# prints: keyID <id>  applicationKey <secret>   (the secret is shown once)
+
+# 3. hand the key to Velero. This is NOT a kubectl step: the credential is a
+#    sops-nix secret on the nodes, mounted over hostPath, the same way
+#    Traefik gets its Technitium token. In the core.home repo:
+#
+#      f=secrets/roles/compute-infra/velero/credentials
+#      cat > "$f" <<'INNER'
+#      [default]
+#      aws_access_key_id=<keyID>
+#      aws_secret_access_key=<applicationKey>
+#      INNER
+#      sops -e -i "$f"
+#
+#    then set rolesConfig.compute-infra.veleroBackup = true on acorn and mini
+#    in inventory/hosts/, and deploy with colmena. The .sops.yaml creation
+#    rule for secrets/roles/compute-infra already covers the path. See
+#    roles/compute-infra/services/velero.nix.
+#
+#    Note: sops-nix flips /run/secrets to a new generation directory on every
+#    activation, so a colmena deploy that rotates secrets leaves the running
+#    pod's bind mount pointing at a deleted inode. Restart it after:
+#      kubectl -n velero rollout restart deploy/velero
+
+# 4. fill in bucket / region / s3Url in values.additional.yaml and commit.
+
+# ---------------------------------------------------------------------------
+# verify
+kubectl -n velero get backupstoragelocation b2        # want PHASE Available
+kubectl -n velero get schedule                         # want velero-daily
+kubectl -n velero logs deploy/velero -f
+
+# force a backup now instead of waiting for 02:00
+kubectl -n velero create -f - <<'YAML'
+apiVersion: velero.io/v1
+kind: Backup
+metadata:
+  generateName: manual-
+  namespace: velero
+spec:
+  ttl: 24h
+  storageLocation: b2
+  includedNamespaces:
+  - '*'
+  snapshotVolumes: false
+  defaultVolumesToFsBackup: false
+YAML
+kubectl -n velero get backup -w
+
+# ---------------------------------------------------------------------------
+# restore
+# The velero CLI is the only sane way to drive a restore:
+#   nix-shell -p velero
+#   velero backup get
+#   velero backup describe <name> --details
+#   velero restore create --from-backup <name> --include-namespaces <ns>
+#
+# Restoring a namespace whose volume data was never backed up recreates the
+# PVC and provisions a fresh *empty* volume. That is expected while volume
+# data is excluded -- see values.additional.yaml for the opt-in plan.

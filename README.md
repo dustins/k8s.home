@@ -21,6 +21,7 @@ single Helm chart:
 | `observability` | `metrics-server`               | metrics-server       | `kube-system`    |
 | `observability` | `headlamp`                     | headlamp             | `kube-system`    |
 | `delivery`      | `argocd`                       | argo-cd              | `argocd`         |
+| `recovery`      | `velero`                       | velero               | `velero`         |
 
 Every app directory has the same shape:
 
@@ -41,7 +42,7 @@ deleting one**. Directory names match the Helm release name (`cilium`,
 
 ## How Argo CD consumes this repo
 
-Argo CD's own directory, `delivery/argocd`, carries five
+Argo CD's own directory, `delivery/argocd`, carries six
 `AppProject` + `ApplicationSet` pairs, one per tier, in `manifests/`. Each
 ApplicationSet uses a git *files* generator over
 `<tier>/*/kustomization.yaml` and templates an Application per match:
@@ -58,9 +59,9 @@ ApplicationSet uses a git *files* generator over
   another app's CRDs or webhooks converge without explicit ordering. See
   [Ordering and dependencies](#ordering-and-dependencies).
 - **`preserveResourcesOnDeletion`** is `true` for networking, security,
-  storage and delivery, and `false` for observability. Deleting a directory in a
-  preserved tier removes the Application but leaves the workload running.
-  Deleting an observability directory tears the workload down too.
+  storage, delivery and recovery, and `false` for observability. Deleting a
+  directory in a preserved tier removes the Application but leaves the workload
+  running. Deleting an observability directory tears the workload down too.
 
 Two details in the Argo CD kustomization make self-management work:
 
@@ -98,6 +99,9 @@ Prerequisites on the nodes that live outside this repo:
   `/etc/ssl/certs/ca-bundle.crt` exist on nodes that can run Traefik. Traefik
   mounts them from the host to do ACME DNS-01 against Technitium and to trust
   the internal CA at `ca.core.infra.home`.
+
+Off-cluster, Velero needs a Backblaze B2 bucket and an application key for it.
+Neither is created by this repo; see [Backups](#backups).
 
 ### 1. Cilium (by hand, mandatory)
 
@@ -151,7 +155,7 @@ credential exists, so this step gates everything that follows.
 
 ### 4. Watch it converge
 
-Within a minute the five ApplicationSets generate one Application per
+Within a minute the six ApplicationSets generate one Application per
 directory and start syncing all of them in parallel. Cilium is adopted rather
 than reinstalled. Expect a few apps to show `Progressing` or a failed attempt
 for a few minutes while their dependencies arrive: Traefik's CRDs unblock the
@@ -184,6 +188,7 @@ convergence. The actual dependencies are:
 | cilium CRDs         | `CiliumLoadBalancerIPPool`, `CiliumL2AnnouncementPolicy` in cilium itself | Soft. Same Application, retry converges.                |
 | cilium LB-IPAM      | traefik's LoadBalancer IP                              | Soft. The Service sits `<pending>` until LB-IPAM assigns it. No failure.   |
 | kubelet-csr-approver| metrics-server scraping kubelets                       | Soft, runtime only. Metrics are empty until CSRs get approved.             |
+| velero node secret  | velero taking any backup                               | Soft, runtime only. The app syncs, the BSL goes Unavailable.               |
 
 Only the first three are hard, and all three are handled in the bootstrap
 steps above. Everything else is "apply fails or sits pending for a few
@@ -238,6 +243,87 @@ grouped PR for Helm chart versions. Merging the PR is the upgrade.
 
 **Hand edits in the cluster get reverted.** `selfHeal` is on everywhere. Make
 the change here instead.
+
+## Backups
+
+`recovery/velero` runs Velero, which writes a backup of the cluster's
+Kubernetes API objects to a Backblaze B2 bucket every night at 02:00 and keeps
+them for 30 days. B2 is reached over its S3-compatible API with
+`velero-plugin-for-aws`; there is no B2-native plugin and none is needed.
+
+**Volume data is deliberately not backed up.** The nightly backup captures
+every namespace's API objects, PVC and PV objects included, but not a single
+byte of volume content: `snapshotVolumes` and `defaultVolumesToFsBackup` are
+both `false`, and the node-agent DaemonSet is not deployed. So a restore today
+rebuilds the cluster's shape and brings volumes back **empty**. That is the
+intended state until Ceph replaces OpenEBS ZFS LocalPV.
+
+The plan for volume data is Velero's own CSI snapshot data mover rather than a
+second tool: it takes a CSI `VolumeSnapshot`, then a short-lived pod uploads the
+snapshot through Kopia to this same bucket, so the first copy of a volume is
+full and every copy after it is a diff. Opt-in is per-PVC by label, so backed-up
+volumes are declared rather than swept up, and restore stays the same
+`velero restore create` used for the API objects. The exact four changes needed
+to turn it on are written out at the bottom of
+`recovery/velero/values.additional.yaml`. OpenEBS ZFS LocalPV cannot be used
+for this even though it supports CSI snapshots, because its snapshots are
+node-local.
+
+### Backblaze B2 credentials
+
+The B2 application key follows Traefik's Technitium token, not the Argo CD
+deploy key: it is a **sops-nix secret on the nodes**, mounted into the Velero
+pod over `hostPath`. Nothing about the credential lives in this repo or in the
+cluster's etcd, and because it is a property of the node rather than the
+cluster, it survives a cluster rebuild with no manual step.
+
+The node side is in the `core.home` repo:
+
+- `roles/compute-infra/services/velero.nix` declares the secret and the
+  `velero` group, gated behind `rolesConfig.compute-infra.veleroBackup`.
+  sops-nix fails activation on a declared secret whose file is missing, which
+  is why the flag exists rather than the declaration being committed inert —
+  the same reason `rustic.nix` next to it is gated.
+- `secrets/roles/compute-infra/velero/credentials` holds the key, encrypted to
+  the `acorn`, `mini` and admin age keys by the existing
+  `secrets/roles/compute-infra` creation rule in `.sops.yaml`.
+
+Two numbers have to agree: the secret is `0440 root:velero` with
+`users.groups.velero.gid = 65531` on the host, and the pod carries that gid via
+`podSecurityContext.supplementalGroups` in `values.additional.yaml`. It is
+`supplementalGroups` and not `fsGroup` because `fsGroup` only re-owns volume
+types that support ownership management, and `hostPath` is not one of them.
+
+One operational wrinkle: sops-nix flips `/run/secrets` to a new generation
+directory on every activation, so a `colmena` deploy that rotates secrets
+leaves the running pod's bind mount pointing at a deleted inode. Restart the
+deployment after one:
+
+```sh
+kubectl -n velero rollout restart deploy/velero
+```
+
+A SOPS-encrypted Secret committed to *this* repo and decrypted by a KSOPS
+plugin in `argocd-repo-server` was considered and rejected: the age key would
+still have to be created by hand, so the manual step moves rather than
+disappears, and it puts a third-party plugin in the render path of every app
+here. If this cluster grows enough secrets to want a real in-cluster story, the
+answer is External Secrets Operator against the Vault instance that `bedrock`
+already manages — not KSOPS.
+
+### Restoring
+
+```sh
+nix-shell -p velero
+velero backup get
+velero backup describe <name> --details
+velero restore create --from-backup <name> --include-namespaces <ns>
+```
+
+Argo CD is the better restore path for anything this repo already describes:
+delete the namespace and let the Application re-sync. Velero is for what the
+repo does *not* describe — hand-created Secrets, CRs written by controllers,
+and anything stateful once volume data is turned on.
 
 ## One-time: retiring MetalLB
 
